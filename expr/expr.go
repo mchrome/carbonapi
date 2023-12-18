@@ -6,22 +6,31 @@ import (
 	"github.com/ansel1/merry"
 	pb "github.com/go-graphite/protocol/carbonapi_v3_pb"
 
-	"github.com/go-graphite/carbonapi/cmd/carbonapi/config"
 	_ "github.com/go-graphite/carbonapi/expr/functions"
 	"github.com/go-graphite/carbonapi/expr/helper"
 	"github.com/go-graphite/carbonapi/expr/metadata"
 	"github.com/go-graphite/carbonapi/expr/types"
+	"github.com/go-graphite/carbonapi/limiter"
 	"github.com/go-graphite/carbonapi/pkg/parser"
 	utilctx "github.com/go-graphite/carbonapi/util/ctx"
+	zipper "github.com/go-graphite/carbonapi/zipper/interfaces"
 )
 
-type evaluator struct{}
+type evaluator struct {
+	limiter limiter.SimpleLimiter
+	zipper  zipper.CarbonZipper
+}
 
 func (eval evaluator) Fetch(ctx context.Context, exprs []parser.Expr, from, until int64, values map[parser.MetricRequest][]*types.MetricData) (map[parser.MetricRequest][]*types.MetricData, error) {
-	if err := config.Config.Limiter.Enter(ctx); err != nil {
+	if eval.zipper == nil {
+		// TODO: may be return error or not check. But for use expr in external applications without CarbonZipper implementation
+		return values, nil
+	}
+
+	if err := eval.limiter.Enter(ctx); err != nil {
 		return nil, err
 	}
-	defer config.Config.Limiter.Leave()
+	defer eval.limiter.Leave()
 
 	multiFetchRequest := pb.MultiFetchRequest{}
 	metricRequestCache := make(map[string]parser.MetricRequest)
@@ -74,7 +83,7 @@ func (eval evaluator) Fetch(ctx context.Context, exprs []parser.Expr, from, unti
 	}
 
 	if len(multiFetchRequest.Metrics) > 0 {
-		metrics, _, err := config.Config.ZipperInstance.Render(ctx, multiFetchRequest)
+		metrics, _, err := eval.zipper.Render(ctx, multiFetchRequest)
 		// If we had only partial result, we want to do our best to actually do our job
 		if err != nil && merry.HTTPCode(err) >= 400 && !haveFallbackSeries {
 			return nil, err
@@ -97,7 +106,7 @@ func (eval evaluator) Fetch(ctx context.Context, exprs []parser.Expr, from, unti
 		targetValues[m] = values[m]
 	}
 
-	if config.Config.ZipperInstance.ScaleToCommonStep() {
+	if eval.zipper.ScaleToCommonStep() {
 		targetValues = helper.ScaleValuesToCommonStep(targetValues)
 	}
 
@@ -131,10 +140,16 @@ func (eval evaluator) Eval(ctx context.Context, exp parser.Expr, from, until int
 	return EvalExpr(ctx, exp, from, until, values)
 }
 
-var _evaluator = evaluator{}
+var _evaluator = &evaluator{}
+
+// Init call on configure phase, if need limiter or/and custom zipper (for refetch/etc)
+func Init(limiter limiter.SimpleLimiter, zipper zipper.CarbonZipper) {
+	_evaluator.limiter = limiter
+	_evaluator.zipper = zipper
+}
 
 func init() {
-	helper.SetEvaluator(_evaluator)
+	// helper.SetEvaluator(_evaluator)
 	metadata.SetEvaluator(_evaluator)
 }
 
