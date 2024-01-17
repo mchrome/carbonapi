@@ -16,12 +16,12 @@ import (
 	zipper "github.com/go-graphite/carbonapi/zipper/interfaces"
 )
 
-type evaluator struct {
+type Evaluator struct {
 	limiter limiter.SimpleLimiter
 	zipper  zipper.CarbonZipper
 }
 
-func (eval evaluator) Fetch(ctx context.Context, exprs []parser.Expr, from, until int64, values map[parser.MetricRequest][]*types.MetricData) (map[parser.MetricRequest][]*types.MetricData, error) {
+func (eval Evaluator) Fetch(ctx context.Context, exprs []parser.Expr, from, until int64, values map[parser.MetricRequest][]*types.MetricData) (map[parser.MetricRequest][]*types.MetricData, error) {
 	if eval.zipper == nil {
 		// TODO: may be return error or not check. But for use expr in external applications without CarbonZipper implementation
 		return values, nil
@@ -114,7 +114,7 @@ func (eval evaluator) Fetch(ctx context.Context, exprs []parser.Expr, from, unti
 }
 
 // Eval evaluates expressions.
-func (eval evaluator) Eval(ctx context.Context, exp parser.Expr, from, until int64, values map[parser.MetricRequest][]*types.MetricData) (results []*types.MetricData, err error) {
+func (eval Evaluator) Eval(ctx context.Context, exp parser.Expr, from, until int64, values map[parser.MetricRequest][]*types.MetricData) (results []*types.MetricData, err error) {
 	rewritten, targets, err := RewriteExpr(ctx, exp, from, until, values)
 	if err != nil {
 		return nil, err
@@ -140,7 +140,31 @@ func (eval evaluator) Eval(ctx context.Context, exp parser.Expr, from, until int
 	return EvalExpr(ctx, exp, from, until, values)
 }
 
-var _evaluator = &evaluator{}
+// FetchAndEvalExp fetch data and evaluates expressions
+func (eval Evaluator) FetchAndEvalExp(ctx context.Context, e parser.Expr, from, until int64, values map[parser.MetricRequest][]*types.MetricData) ([]*types.MetricData, merry.Error) {
+	targetValues, err := eval.Fetch(ctx, []parser.Expr{e}, from, until, values)
+	if err != nil {
+		return nil, merry.Wrap(err)
+	}
+
+	res, err := eval.Eval(ctx, e, from, until, targetValues)
+	if err != nil {
+		return nil, merry.Wrap(err)
+	}
+
+	for mReq := range values {
+		SortMetrics(values[mReq], mReq)
+	}
+
+	return res, nil
+}
+
+// New init evaluator
+func New(limiter limiter.SimpleLimiter, zipper zipper.CarbonZipper) *Evaluator {
+	return &Evaluator{limiter: limiter, zipper: zipper}
+}
+
+var _evaluator = &Evaluator{}
 
 // Init call on configure phase, if need limiter or/and custom zipper (for refetch/etc)
 func Init(limiter limiter.SimpleLimiter, zipper zipper.CarbonZipper) {
@@ -155,21 +179,7 @@ func init() {
 
 // FetchAndEvalExp fetch data and evaluates expressions
 func FetchAndEvalExp(ctx context.Context, e parser.Expr, from, until int64, values map[parser.MetricRequest][]*types.MetricData) ([]*types.MetricData, merry.Error) {
-	targetValues, err := _evaluator.Fetch(ctx, []parser.Expr{e}, from, until, values)
-	if err != nil {
-		return nil, merry.Wrap(err)
-	}
-
-	res, err := _evaluator.Eval(ctx, e, from, until, targetValues)
-	if err != nil {
-		return nil, merry.Wrap(err)
-	}
-
-	for mReq := range values {
-		SortMetrics(values[mReq], mReq)
-	}
-
-	return res, nil
+	return _evaluator.FetchAndEvalExp(ctx, e, from, until, values)
 }
 
 func FetchAndEvalExprs(ctx context.Context, exprs []parser.Expr, from, until int64, values map[parser.MetricRequest][]*types.MetricData) ([]*types.MetricData, map[string]merry.Error) {
