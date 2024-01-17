@@ -106,7 +106,9 @@ func (f *moving) Do(ctx context.Context, e parser.Expr, from, until int64, value
 		preview = maxStep * int64(n)
 		adjustedStart -= maxStep * int64(n)
 		windowPoints = n
-		refetch = true
+		if adjustedStart != from {
+			refetch = true
+		}
 	case parser.EtString:
 		var n32 int32
 		n32, err = e.GetIntervalArg(1, 1)
