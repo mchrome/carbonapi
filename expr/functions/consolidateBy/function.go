@@ -26,6 +26,16 @@ func New(configFile string) []interfaces.FunctionMetadata {
 	return res
 }
 
+var ValidAggregateFunctions = map[string]struct{}{
+	"average": {},
+	"avg":     {},
+	"max":     {},
+	"min":     {},
+	"sum":     {},
+	"first":   {},
+	"last":    {},
+}
+
 // consolidateBy(seriesList, aggregationMethod)
 func (f *consolidateBy) Do(ctx context.Context, eval interfaces.Evaluator, e parser.Expr, from, until int64, values map[parser.MetricRequest][]*types.MetricData) ([]*types.MetricData, error) {
 	if e.ArgsLen() < 2 {
