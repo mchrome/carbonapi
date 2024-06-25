@@ -26,6 +26,7 @@ func New(configFile string) []interfaces.FunctionMetadata {
 	return res
 }
 
+// The set of valid aggregation methods for consolidateBy function.
 var ValidAggregateFunctions = map[string]struct{}{
 	"average": {},
 	"avg":     {},
