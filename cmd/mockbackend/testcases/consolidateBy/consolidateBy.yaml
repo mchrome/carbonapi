@@ -66,7 +66,19 @@ test:
               URL: "/render?format=json&target=consolidateBy(metric*, 'somefunc')&maxDataPoints=2"
               expectedResponse:
                   httpCode: 400
-                  contentType: "text/plain; charset=utf-8"  
+                  contentType: "text/plain; charset=utf-8"
+            - endpoint: "http://127.0.0.1:8081"
+              type: "GET"
+              URL: "/render?format=json&target=limit(metric*, 2)&maxDataPoints=2"
+              expectedResponse:
+                  httpCode: 200
+                  contentType: "application/json"
+            - endpoint: "http://127.0.0.1:8081"
+              type: "GET"
+              URL: "/render?format=json&target=consolidateBy(seriesByTag('name=rps', 'env=prod'), 'sum')&maxDataPoints=2"
+              expectedResponse:
+                  httpCode: 200
+                  contentType: "application/json"    
                
 
 listeners:
